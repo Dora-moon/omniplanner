@@ -1,10 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   images: {
-    // Firebase Storage download URLs live on this host — allow them for
-    // next/image if you switch <img> tags to next/image later.
-    remotePatterns: [{ protocol: 'https', hostname: 'firebasestorage.googleapis.com' }],
+    // Images are now stored as base64 data URLs inside Firestore, so no
+    // remote host whitelisting is needed for next/image.
+    remotePatterns: [],
   },
 };
 

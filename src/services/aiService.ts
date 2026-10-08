@@ -9,41 +9,14 @@ import type {
   Goal,
   Language,
   ParsedTaskDraft,
+  ProfileData,
+  UserProfile,
 } from '@/types';
+import { callGemini, GeminiError, safeJsonParse } from '@/services/geminiClient';
 
-const GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-const GEMINI_MODEL = 'gemini-2.5-flash';
-const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-
-class AiServiceError extends Error {}
-
-async function callGemini(payload: Record<string, unknown>): Promise<string> {
-  if (!GEMINI_API_KEY) {
-    throw new AiServiceError(
-      'Missing NEXT_PUBLIC_GEMINI_API_KEY. Add it to .env.local to enable AI features.'
-    );
-  }
-  const res = await fetch(`${GEMINI_ENDPOINT}?key=${GEMINI_API_KEY}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => res.statusText);
-    throw new AiServiceError(`Gemini API error (${res.status}): ${errText}`);
-  }
-  const data = await res.json();
-  const text: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (typeof text !== 'string') {
-    throw new AiServiceError('Gemini returned an unexpected response shape.');
-  }
-  return text;
-}
-
-function safeJsonParse<T>(raw: string): T {
-  const cleaned = raw.trim().replace(/^```json\s*/i, '').replace(/```$/, '').trim();
-  return JSON.parse(cleaned) as T;
-}
+export { GeminiError };
+export const AiServiceError = GeminiError;
+export type AiServiceError = GeminiError;
 
 /**
  * Parses a free-text (or voice-transcribed) schedule description into structured task drafts.
@@ -51,7 +24,8 @@ function safeJsonParse<T>(raw: string): T {
 export async function parseScheduleWithAI(
   rawText: string,
   language: Language,
-  referenceDateISO: string
+  referenceDateISO: string,
+  profile?: UserProfile | null
 ): Promise<ParsedTaskDraft[]> {
   const prompt = `You are a schedule-parsing assistant for a life-planner app.
 Reference date (today): ${referenceDateISO} (this is a Monday-based week; use it to resolve relative days like "Tuesday", "T3", "next week").
@@ -66,26 +40,29 @@ Return ONLY a JSON array. Each item must match:
 User's schedule description (language: ${language}):
 """${rawText}"""`;
 
-  const raw = await callGemini({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: {
-      responseMimeType: 'application/json',
-      temperature: 0.2,
-      responseSchema: {
-        type: 'ARRAY',
-        items: {
-          type: 'OBJECT',
-          properties: {
-            title: { type: 'STRING' },
-            date: { type: 'STRING' },
-            time: { type: 'STRING', nullable: true },
-            category: { type: 'STRING', enum: ['work', 'study', 'fitness', 'habit', 'rest', 'other'] },
+  const raw = await callGemini(
+    {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature: 0.2,
+        responseSchema: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              title: { type: 'STRING' },
+              date: { type: 'STRING' },
+              time: { type: 'STRING', nullable: true },
+              category: { type: 'STRING', enum: ['work', 'study', 'fitness', 'habit', 'rest', 'other'] },
+            },
+            required: ['title', 'date', 'category'],
           },
-          required: ['title', 'date', 'category'],
         },
       },
     },
-  });
+    { profile }
+  );
 
   const parsed = safeJsonParse<ParsedTaskDraft[]>(raw);
   if (!Array.isArray(parsed)) throw new AiServiceError('Expected an array of tasks from Gemini.');
@@ -99,6 +76,7 @@ export interface MascotChatContext {
   metrics: FitnessMetrics | null;
   habitStreak: number;
   memories?: AIMemory[];
+  profileData?: ProfileData | null;
 }
 
 /**
@@ -108,7 +86,8 @@ export interface MascotChatContext {
 export async function chatWithMascot(
   userMessage: string,
   context: MascotChatContext,
-  language: Language
+  language: Language,
+  profile?: UserProfile | null
 ): Promise<string> {
   const metricsLine = context.metrics
     ? `BMI: ${context.metrics.bmi}, BMR: ${context.metrics.bmr} kcal, TDEE: ${context.metrics.tdee} kcal, daily target: ${context.metrics.targetCalories} kcal.`
@@ -121,20 +100,48 @@ export async function chatWithMascot(
           .join('\n')}\n(Use these memories naturally to personalize your reply and demonstrate ongoing companionship across sessions. Do NOT simply list them out.)`
       : '';
 
+  const profileSection = buildProfileSection(context.profileData);
+
   const prompt = `You are Pixel, a warm, thoughtful, and encouraging pixel-art AI companion inside a life & fitness planner app.
 User's primary goal: ${context.goal}.
 Today's progress: ${context.tasksDone}/${context.tasksTotal} tasks completed. Current habit streak: ${context.habitStreak} day(s).
 Body metrics: ${metricsLine}
 ${memorySection}
+${profileSection}
 
 Reply in ${language === 'vi' ? 'Vietnamese' : 'English'}, in 1-3 short sentences, warm, personalized, and specific to the context and memories above. No markdown fences, no emoji spam (at most one emoji).
 User says: "${userMessage}"`;
 
-  const raw = await callGemini({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.7 },
-  });
+  const raw = await callGemini(
+    {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.7 },
+    },
+    { profile }
+  );
   return raw.trim();
+}
+
+/**
+ * Builds a concise, human-readable summary of the user's personal profile
+ * (display name, phone, bio, habits, goals, interests, recent journal notes)
+ * so the AI companion can answer in a genuinely personalized way.
+ */
+function buildProfileSection(profileData?: ProfileData | null): string {
+  if (!profileData) return '';
+  const lines: string[] = [];
+  if (profileData.displayName) lines.push(`Display name: ${profileData.displayName}`);
+  if (profileData.phone) lines.push(`Phone: ${profileData.phone}`);
+  if (profileData.bio) lines.push(`Bio: ${profileData.bio}`);
+  if (profileData.habits.length) lines.push(`Habits: ${profileData.habits.join(', ')}`);
+  if (profileData.goals.length) lines.push(`Goals: ${profileData.goals.join(', ')}`);
+  if (profileData.interests.length) lines.push(`Interests: ${profileData.interests.join(', ')}`);
+  if (profileData.journalEntries.length) {
+    const recent = profileData.journalEntries.slice(0, 3).map((e) => `"${e.text}"`).join(' | ');
+    lines.push(`Recent journal notes: ${recent}`);
+  }
+  if (!lines.length) return '';
+  return `\nPersonal profile:\n${lines.map((l) => `- ${l}`).join('\n')}\n`;
 }
 
 /**
@@ -143,7 +150,8 @@ User says: "${userMessage}"`;
  */
 export async function extractKeyMemories(
   userMessage: string,
-  language: Language
+  language: Language,
+  profile?: UserProfile | null
 ): Promise<string[]> {
   // Only check if message contains personal intent keywords
   const lower = userMessage.toLowerCase();
@@ -163,13 +171,16 @@ If the message is just a general question, small talk, or has no lasting persona
 Return ONLY a JSON array of strings.`;
 
   try {
-    const raw = await callGemini({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.1,
+    const raw = await callGemini(
+      {
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.1,
+        },
       },
-    });
+      { profile }
+    );
     const parsed = safeJsonParse<string[]>(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch {
@@ -180,37 +191,41 @@ Return ONLY a JSON array of strings.`;
 /**
  * Turns a natural-language style prompt into concrete CSS custom-property overrides.
  */
-export async function generateThemeWithAI(stylePrompt: string): Promise<CssThemeVariables> {
+export async function generateThemeWithAI(
+  stylePrompt: string,
+  profile?: UserProfile | null
+): Promise<CssThemeVariables> {
   const prompt = `You are a UI theme generator for a clean, modern life/fitness planner web app.
 The user wants a theme described as: "${stylePrompt}".
 Return a JSON object with hex color strings for exactly these keys, ensuring strong contrast between --bg and --text:
 --bg, --panel, --panel-2, --line, --text, --text-dim, --accent, --accent-2, --sidebar-bg, --sidebar-text`;
 
-  const raw = await callGemini({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: {
-      responseMimeType: 'application/json',
-      temperature: 0.6,
-      responseSchema: {
-        type: 'OBJECT',
-        properties: {
-          '--bg': { type: 'STRING' },
-          '--panel': { type: 'STRING' },
-          '--panel-2': { type: 'STRING' },
-          '--line': { type: 'STRING' },
-          '--text': { type: 'STRING' },
-          '--text-dim': { type: 'STRING' },
-          '--accent': { type: 'STRING' },
-          '--accent-2': { type: 'STRING' },
-          '--sidebar-bg': { type: 'STRING' },
-          '--sidebar-text': { type: 'STRING' },
+  const raw = await callGemini(
+    {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature: 0.6,
+        responseSchema: {
+          type: 'OBJECT',
+          properties: {
+            '--bg': { type: 'STRING' },
+            '--panel': { type: 'STRING' },
+            '--panel-2': { type: 'STRING' },
+            '--line': { type: 'STRING' },
+            '--text': { type: 'STRING' },
+            '--text-dim': { type: 'STRING' },
+            '--accent': { type: 'STRING' },
+            '--accent-2': { type: 'STRING' },
+            '--sidebar-bg': { type: 'STRING' },
+            '--sidebar-text': { type: 'STRING' },
+          },
+          required: ['--bg', '--panel', '--panel-2', '--line', '--text', '--text-dim', '--accent', '--accent-2'],
         },
-        required: ['--bg', '--panel', '--panel-2', '--line', '--text', '--text-dim', '--accent', '--accent-2'],
       },
     },
-  });
+    { profile }
+  );
 
   return safeJsonParse<CssThemeVariables>(raw);
 }
-
-export { AiServiceError };

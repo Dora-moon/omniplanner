@@ -1,13 +1,12 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Allows user to read and write their own document and all subcollections
+    // (users/{uid}/**: tasks, habits, memories, posts, layout, etc.)
     match /users/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
 
-      match /tasks/{taskId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
-      }
-      match /habits/{habitId} {
+      match /{allSubcollections=**} {
         allow read, write: if request.auth != null && request.auth.uid == uid;
       }
     }

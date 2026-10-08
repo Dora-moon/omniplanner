@@ -7,3 +7,7 @@ export * from './useCalendar';
 export * from './useCompanion';
 export * from './useTimer';
 export * from './useSettings';
+export * from './useProfile';
+export * from './usePosts';
+export * from './useDashboardLayout';
+export * from './useDashboardData';

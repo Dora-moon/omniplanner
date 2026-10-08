@@ -3,6 +3,7 @@
 // Automatically reflects the active theme tokens (--sidebar-bg, --sidebar-active, --sidebar-border).
 
 import React from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import {
   CalendarDays,
   LayoutDashboard,
@@ -13,6 +14,8 @@ import {
   ChevronRight,
   LogOut,
   Sparkles,
+  Share2,
+  User,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslation } from '@/i18n/translations';
@@ -39,6 +42,8 @@ interface NavItem {
     | 'tabCompanion'
     | 'tabFocus'
     | 'tabSounds'
+    | 'tabSocial'
+    | 'tabProfile'
     | 'tabSettings';
   icon: LucideIcon;
 }
@@ -49,6 +54,7 @@ const PRIMARY_NAV_ITEMS: NavItem[] = [
   { id: 'companion', labelKey: 'tabCompanion', icon: Bot },
   { id: 'focus', labelKey: 'tabFocus', icon: Timer },
   { id: 'sounds', labelKey: 'tabSounds', icon: Music2 },
+  { id: 'social', labelKey: 'tabSocial', icon: Share2 },
 ];
 
 export default function Sidebar({
@@ -69,9 +75,24 @@ export default function Sidebar({
   const streak = habits.reduce((max, h) => Math.max(max, h.currentStreak), 0) || 7;
   const displayName = profile?.displayName || 'Alex';
 
+  const router = useRouter();
+  const pathname = usePathname();
+
   function handleTabClick(tab: TabId) {
     onTabChange(tab);
     onCloseMobile?.();
+
+    if (tab === 'profile') {
+      if (pathname !== '/profile') router.push('/profile');
+    } else if (tab === 'social') {
+      if (pathname !== '/social') router.push('/social');
+    } else if (tab === 'settings') {
+      if (pathname !== '/settings') router.push('/settings');
+    } else {
+      if (pathname !== '/') {
+        router.push(`/?tab=${tab}`);
+      }
+    }
   }
 
   return (
@@ -106,9 +127,9 @@ export default function Sidebar({
         <div className="flex flex-col px-4 pt-6 pb-2">
           {/* Brand Header */}
           <div className="flex items-center gap-2.5 px-2 mb-8">
-            <div className="w-8 h-8 rounded-xl bg-white/10 p-1 flex items-center justify-center border border-white/15 shadow-inner flex-shrink-0">
+            <div className="w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center border border-white/20 shadow-inner flex-shrink-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.png" alt="Omni Logo" className="w-full h-full object-contain" />
+              <img src="/logo.png" alt="Omni Logo" className="w-full h-full object-cover" />
             </div>
             <div>
               <div className="flex items-center gap-1.5">
@@ -249,15 +270,19 @@ export default function Sidebar({
 
           {/* User Profile Card */}
           <div
-            onClick={() => handleTabClick('settings')}
-            className="flex items-center gap-3 p-2.5 rounded-xl bg-black/20 hover:bg-black/30 border border-white/10 cursor-pointer transition-all duration-150 group shadow-sm"
+            onClick={() => handleTabClick('profile')}
+            className={`flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer transition-all duration-150 group shadow-sm ${
+              activeTab === 'profile'
+                ? 'bg-white/15 border-white/25 shadow-md'
+                : 'bg-black/20 hover:bg-black/30 border-white/10'
+            }`}
           >
             {/* Avatar */}
             <div className="relative w-9 h-9 rounded-full overflow-hidden bg-white/20 flex-shrink-0 flex items-center justify-center border border-white/20">
-              {profile?.mascotUrl ? (
+              {(profile?.profileData?.avatarUrl || profile?.mascotUrl) ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={profile.mascotUrl}
+                  src={profile?.profileData?.avatarUrl || profile?.mascotUrl || ''}
                   alt="Avatar"
                   className="w-full h-full object-cover"
                 />

@@ -2,7 +2,8 @@
 // Controller hook managing Settings: theme customization, background color/image upload,
 // body metrics, and AI memories privacy controls.
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { toast } from '@/ui/Toast';
 import { generateThemeWithAI } from '@/services/aiService';
 import {
   saveThemeConfig,
@@ -66,6 +67,21 @@ export function useSettings({
   const [mascotUploading, setMascotUploading] = useState(false);
   const [mascotError, setMascotError] = useState('');
 
+  // AI Settings (Requirement 7b)
+  const [aiApiSource, setAiApiSource] = useState<'system' | 'personal'>(
+    profile.aiApiSource || 'system'
+  );
+  const [aiPersonalApiKey, setAiPersonalApiKey] = useState(
+    profile.aiPersonalApiKey || ''
+  );
+  const [aiKeySaving, setAiKeySaving] = useState(false);
+  const [aiKeySavedMsg, setAiKeySavedMsg] = useState('');
+
+  useEffect(() => {
+    if (profile.aiApiSource) setAiApiSource(profile.aiApiSource);
+    if (profile.aiPersonalApiKey !== undefined) setAiPersonalApiKey(profile.aiPersonalApiKey || '');
+  }, [profile.aiApiSource, profile.aiPersonalApiKey]);
+
   // AI Memories
   const [memories, setMemories] = useState<AIMemory[]>([]);
   const [newMemoryText, setNewMemoryText] = useState('');
@@ -76,6 +92,27 @@ export function useSettings({
     const unsub = subscribeUserMemories(uid, setMemories);
     return () => unsub();
   }, [uid]);
+
+  async function handleSaveAiSettings(
+    source?: 'system' | 'personal',
+    key?: string
+  ) {
+    const nextSource = source ?? aiApiSource;
+    const nextKey = key !== undefined ? key : aiPersonalApiKey;
+    setAiKeySaving(true);
+    try {
+      await updateUserProfile(uid, {
+        aiApiSource: nextSource,
+        aiPersonalApiKey: nextKey ? nextKey.trim() : null,
+      });
+      setAiKeySavedMsg(language === 'vi' ? 'Đã lưu cấu hình AI!' : 'AI settings saved!');
+      setTimeout(() => setAiKeySavedMsg(''), 3000);
+    } catch (err: any) {
+      console.error('Failed to save AI settings:', err);
+    } finally {
+      setAiKeySaving(false);
+    }
+  }
 
   async function applyPreset(preset: Exclude<ThemePreset, 'custom'>) {
     if (!editable) return;
@@ -92,12 +129,13 @@ export function useSettings({
     setThemeLoading(true);
     setThemeStatus(language === 'vi' ? 'Đang tạo giao diện...' : 'Generating theme...');
     try {
-      const overrides = await generateThemeWithAI(themePrompt.trim());
+      const overrides = await generateThemeWithAI(themePrompt.trim(), profile);
       await saveThemeConfig(uid, { preset: 'custom', overrides });
       setThemeStatus(language === 'vi' ? 'Đã áp dụng giao diện!' : 'Theme applied!');
-    } catch (err) {
-      setThemeStatus(language === 'vi' ? 'Không thể tạo giao diện lúc này.' : 'Failed to generate theme.');
-      console.error(err);
+    } catch (err: any) {
+      const message = err?.message || (language === 'vi' ? 'Không thể tạo giao diện lúc này.' : 'Failed to generate theme.');
+      setThemeStatus(message);
+      console.error('useSettings handleGenerateTheme error:', err);
     } finally {
       setThemeLoading(false);
     }
@@ -124,13 +162,20 @@ export function useSettings({
     setBgUploadLoading(true);
     setBgUploadError('');
     try {
+      // uploadBackgroundImage compresses the image and writes the data URL
+      // straight to customBackground on the user doc (no Storage).
       const url = await uploadBackgroundImage(uid, file);
       await updateUserProfile(uid, {
         customBackground: url,
         backgroundType: 'image',
       });
+      toast.success(
+        language === 'vi' ? 'Đã cập nhật hình nền!' : 'Background updated!'
+      );
     } catch (err: any) {
+      const code = err?.code || 'bg-upload-failed';
       setBgUploadError(err.message || 'Upload failed');
+      toast.error(err.message || 'Upload failed', code);
     } finally {
       setBgUploadLoading(false);
     }
@@ -165,10 +210,17 @@ export function useSettings({
     setMascotUploading(true);
     setMascotError('');
     try {
+      // uploadMascotSprite keeps PNG/GIF sprites un-re-encoded (animation
+      // survives) and writes the data URL straight to mascotUrl on the doc.
       const url = await uploadMascotSprite(uid, file);
       await updateUserProfile(uid, { mascotUrl: url });
+      toast.success(
+        language === 'vi' ? 'Đã cập nhật sprite!' : 'Mascot sprite updated!'
+      );
     } catch (err: any) {
+      const code = err?.code || 'mascot-upload-failed';
       setMascotError(err.message || 'Mascot upload failed');
+      toast.error(err.message || 'Mascot upload failed', code);
     } finally {
       setMascotUploading(false);
     }
@@ -211,6 +263,13 @@ export function useSettings({
     profileSavedMsg,
     mascotUploading,
     mascotError,
+    aiApiSource,
+    setAiApiSource,
+    aiPersonalApiKey,
+    setAiPersonalApiKey,
+    aiKeySaving,
+    aiKeySavedMsg,
+    handleSaveAiSettings,
     memories,
     newMemoryText,
     setNewMemoryText,

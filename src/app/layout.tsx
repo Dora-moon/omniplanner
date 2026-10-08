@@ -1,9 +1,15 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { MusicProvider } from '@/context/MusicContext';
+import { ToastContainer } from '@/ui/Toast';
 
 export const metadata: Metadata = {
   title: 'OmniPlanner & Pixel AI Companion',
   description: 'Universal life management & calendar workspace with a pixel-art AI mascot companion.',
+  icons: {
+    icon: '/logo.png',
+    apple: '/logo.png',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -17,7 +23,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <MusicProvider>{children}</MusicProvider>
+        <ToastContainer />
+      </body>
     </html>
   );
 }
+

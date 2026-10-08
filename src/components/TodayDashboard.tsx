@@ -25,17 +25,17 @@ import {
   Sliders,
   Eye,
   EyeOff,
-  ArrowUp,
-  ArrowDown,
   GripVertical,
-  Check as CheckIcon,
   RotateCcw,
 } from 'lucide-react';
+import { ResponsiveGridLayout, useContainerWidth } from 'react-grid-layout';
 import { useTranslation } from '@/i18n/translations';
 import { useTodayDashboard } from '@/controllers/useTodayDashboard';
+import { useDashboardLayout } from '@/controllers/useDashboardLayout';
 import { useMusic } from '@/context/MusicContext';
 import { Modal, Input, Select, Button, Badge } from '@/ui';
 import type {
+  AppMode,
   ChatMessage,
   DashboardBlockId,
   Habit,
@@ -60,6 +60,7 @@ interface TodayDashboardProps {
   onSendMessage: (userText: string, mascotReply: string) => void;
   onNavigateTab: (tab: TabId) => void;
   onTimerComplete?: (mode: string) => void;
+  onModeChange?: (mode: AppMode) => void;
 }
 
 export default function TodayDashboard({
@@ -72,10 +73,11 @@ export default function TodayDashboard({
   onSendMessage,
   onNavigateTab,
   onTimerComplete,
+  onModeChange,
 }: TodayDashboardProps) {
   const { t } = useTranslation(language);
 
-  // Controller hook for Today's tasks & Edit mode
+  // Controller hook for Today's tasks
   const {
     todayISO,
     todaysTasks,
@@ -95,15 +97,35 @@ export default function TodayDashboard({
     handleToggleTask,
     handleDeleteTask,
     handleCreateTask,
-    isEditMode,
-    setIsEditMode,
-    blocks,
-    toggleBlockVisibility,
-    reorderBlocks,
-    moveBlockUp,
-    moveBlockDown,
-    resetToDefaultLayout,
   } = useTodayDashboard({ uid, profile, tasks, habits });
+
+  // Controller hook for react-grid-layout and debounced Firestore persistence
+  const {
+    grid,
+    toggleBlockVisibility,
+    isBlockVisible,
+    isSaving: isLayoutSaving,
+    handleLayoutChange,
+    handleReset: handleResetLayout,
+  } = useDashboardLayout({ uid });
+
+  const [optimisticMode, setOptimisticMode] = useState<AppMode | null>(null);
+  const currentMode = optimisticMode ?? profile.mode ?? 'view';
+  const isEditMode = currentMode === 'edit';
+
+  React.useEffect(() => {
+    setOptimisticMode(null);
+  }, [profile.mode]);
+
+  function handleToggleEditMode() {
+    const nextMode = isEditMode ? 'view' : 'edit';
+    setOptimisticMode(nextMode);
+    if (onModeChange) {
+      onModeChange(nextMode);
+    }
+  }
+
+  const { width, containerRef, mounted } = useContainerWidth({ initialWidth: 1200 });
 
   // Global Music Player hook (Requirement 5)
   const {
@@ -120,8 +142,6 @@ export default function TodayDashboard({
     toggleLike,
     toggleShuffle,
   } = useMusic();
-
-  const [draggedBlockIndex, setDraggedBlockIndex] = useState<number | null>(null);
 
   // Time-based greeting
   const greeting = useMemo(() => {
@@ -161,27 +181,9 @@ export default function TodayDashboard({
 
   const musicProgress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
-  // Drag and drop handlers
-  function handleDragStart(index: number) {
-    setDraggedBlockIndex(index);
-  }
-
-  function handleDragOver(e: React.DragEvent, index: number) {
-    e.preventDefault();
-  }
-
-  function handleDrop(targetIndex: number) {
-    if (draggedBlockIndex === null || draggedBlockIndex === targetIndex) return;
-    const reordered = [...blocks];
-    const [moved] = reordered.splice(draggedBlockIndex, 1);
-    reordered.splice(targetIndex, 0, moved);
-    reorderBlocks(reordered);
-    setDraggedBlockIndex(null);
-  }
-
   // Map block IDs to labels
   const BLOCK_LABELS: Record<DashboardBlockId, string> = {
-    banner: 'Greeting Banner',
+    banner: language === 'vi' ? 'Biểu ngữ' : 'Greeting Banner',
     tasks: t('blockTasks'),
     companion_mini: t('blockCompanion'),
     calendar: t('blockCalendar'),
@@ -191,10 +193,23 @@ export default function TodayDashboard({
     quote: t('blockQuote'),
   };
 
-  const isVisible = (id: DashboardBlockId) => {
-    const found = blocks.find((b) => b.id === id);
-    return found ? found.visible : true;
-  };
+  const ALL_BLOCKS: DashboardBlockId[] = [
+    'banner',
+    'tasks',
+    'companion_mini',
+    'calendar',
+    'timer',
+    'stats',
+    'music',
+    'quote',
+  ];
+
+  const isVisible = (id: DashboardBlockId) => isBlockVisible(id);
+
+  const visibleItems = useMemo(
+    () => grid.filter((item) => isBlockVisible(item.i)),
+    [grid, isBlockVisible]
+  );
 
   /* ================= SUB-RENDERERS FOR EACH BLOCK ================= */
 
@@ -354,69 +369,25 @@ export default function TodayDashboard({
     </div>
   );
 
-  // Block 3: Pixel Companion Mini Card
+  // Block 3: Pixel Companion
   const renderCompanionMini = () => (
-    <div className="bg-gradient-to-br from-[#F5F2FE] via-[var(--panel)] to-[#EEF5F2] rounded-3xl p-6 border border-[var(--line)] shadow-[var(--shadow)] flex flex-col justify-between text-[var(--text)]">
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-[#E5DFFB] flex items-center justify-center text-xs">
-              👾
-            </div>
-            <span className="font-bold text-sm text-[var(--text)]">
-              {t('aiCompanionTitle')}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 bg-emerald-100/60 px-2 py-0.5 rounded-full">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Online</span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4 my-3">
-          <div className="w-16 h-16 rounded-2xl bg-[var(--panel)] border border-[var(--line)] flex items-center justify-center text-3xl shadow-xs flex-shrink-0 overflow-hidden">
-            {profile.mascotUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={profile.mascotUrl} alt="Pixel" className="w-full h-full object-cover" />
-            ) : (
-              <span>👾</span>
-            )}
-          </div>
-          <div className="flex-1 bg-[var(--panel)] p-3 rounded-2xl border border-[var(--line)] shadow-xs text-xs text-[var(--text)] leading-relaxed relative">
-            <div className="absolute -left-2 top-4 w-0 h-0 border-t-4 border-t-transparent border-b-4 border-b-transparent border-r-8 border-r-[var(--panel)]" />
-            <p>
-              {t('pixelSpeechBubble').replace('{count}', tasksLeftCount.toString())}
-            </p>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={handlePixelCTA}
-          className="w-full mt-3 py-2.5 px-4 rounded-xl bg-[var(--accent)] hover:brightness-105 text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-sm transition-all active:scale-98"
-        >
-          <span>{t('letsDoIt')}</span>
-          <span>&gt;</span>
-        </button>
-      </div>
-
-      <div className="pt-4 mt-3 border-t border-[var(--line)] flex items-center justify-between text-xs">
-        <span className="text-[var(--text-dim)]">{t('currentMood')}</span>
-        <span className="font-semibold text-[var(--text)] flex items-center gap-1.5">
-          <span>😊</span>
-          <span>
-            {completedCount >= todaysTasks.length && todaysTasks.length > 0
-              ? t('moodMotivated')
-              : t('moodFocused')}
-          </span>
-        </span>
-      </div>
+    <div className="h-full w-full flex flex-col">
+      <PixelAssistant
+        language={language}
+        profile={profile}
+        tasks={tasks}
+        habits={habits}
+        chatHistory={chatHistory}
+        onSendMessage={onSendMessage}
+        variant="compact"
+        onOpenSettings={() => onNavigateTab('settings')}
+      />
     </div>
   );
 
   // Block 4: Calendar Grid
   const renderCalendar = () => (
-    <CalendarView uid={uid} language={language} tasks={tasks} variant="compact" />
+    <CalendarView uid={uid} language={language} tasks={tasks} variant="compact" profile={profile} />
   );
 
   // Block 5: Timer
@@ -641,12 +612,12 @@ export default function TodayDashboard({
   return (
     <div className="w-full min-h-screen bg-[var(--bg)] text-[var(--text)] p-4 lg:p-7 transition-colors">
       <div className="max-w-[1360px] mx-auto space-y-6">
-        {/* ================= EDIT MODE TOOLBAR ================= */}
-        <div className="flex items-center justify-between p-3 rounded-2xl bg-[var(--panel)] border border-[var(--line)] shadow-xs flex-wrap gap-3">
+        {/* ================= EDIT MODE / LAYOUT TOOLBAR ================= */}
+        <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[var(--panel)] border border-[var(--line)] shadow-xs flex-wrap gap-3">
           <div className="flex items-center gap-2.5">
             <button
               type="button"
-              onClick={() => setIsEditMode(!isEditMode)}
+              onClick={handleToggleEditMode}
               className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
                 isEditMode
                   ? 'bg-[var(--accent)] text-white shadow-xs'
@@ -656,152 +627,146 @@ export default function TodayDashboard({
               <Sliders size={13} />
               <span>{isEditMode ? t('editModeDone') : t('editMode')}</span>
             </button>
-            <span className="text-xs text-[var(--text-dim)] hidden sm:inline">
-              {isEditMode ? t('editModeHint') : 'Customize block order and visibility'}
-            </span>
+
+            {isEditMode ? (
+              <span className="text-xs text-[var(--accent)] font-medium flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[var(--accent)] animate-ping" />
+                {t('editModeActive') || 'Edit Mode Active'} — {language === 'vi' ? 'Kéo để di chuyển, kéo góc dưới phải để đổi kích thước' : 'Drag to move, pull bottom-right corner to resize'}
+              </span>
+            ) : (
+              <span className="text-xs text-[var(--text-dim)] hidden sm:inline">
+                {language === 'vi' ? 'Bố cục tự do (Drag & Resize) đã được khóa' : 'Dashboard layout is locked'}
+              </span>
+            )}
           </div>
 
-          {isEditMode && (
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            {isLayoutSaving && (
+              <span className="text-xs text-[var(--accent)] animate-pulse font-medium">
+                {language === 'vi' ? 'Đang lưu...' : 'Saving...'}
+              </span>
+            )}
+
+            {isEditMode && (
               <button
                 type="button"
-                onClick={resetToDefaultLayout}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-[var(--text-dim)] hover:text-[var(--text)] bg-[var(--panel-2)] border border-[var(--line)] transition-colors"
+                onClick={handleResetLayout}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-[var(--text-dim)] hover:text-[var(--text)] bg-[var(--panel-2)] border border-[var(--line)] transition-colors hover:border-[var(--accent)]"
               >
                 <RotateCcw size={12} />
                 <span>{t('resetLayout')}</span>
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
-        {/* ================= EDIT MODE REORDERING DRAWER (when Edit mode is ON) ================= */}
+        {/* ================= EDIT MODE VISIBILITY PILLS (when Edit mode is ON) ================= */}
         {isEditMode && (
-          <div className="p-4 sm:p-5 rounded-3xl bg-[var(--panel-2)] border-2 border-dashed border-[var(--accent)] space-y-3 animate-fade-in">
+          <div className="p-4 rounded-3xl bg-[var(--panel-2)] border-2 border-dashed border-[var(--accent)]/60 space-y-2.5 animate-fade-in">
             <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-[var(--text)] font-sans">
-                {t('editModeActive')}
-              </h3>
-              <span className="text-xs text-[var(--text-dim)]">
-                Drag cards or use arrows to adjust position
+              <span className="font-bold text-xs text-[var(--text)] uppercase tracking-wider">
+                {language === 'vi' ? 'Bật / Ẩn các khối hiển thị' : 'Toggle Block Visibility'}
+              </span>
+              <span className="text-[11px] text-[var(--text-dim)]">
+                {language === 'vi' ? 'Nhấn để ẩn hoặc hiện khối trên Dashboard' : 'Click to hide or show cards on Dashboard'}
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
-              {blocks.map((b, index) => (
-                <div
-                  key={b.id}
-                  draggable
-                  onDragStart={() => handleDragStart(index)}
-                  onDragOver={(e) => handleDragOver(e, index)}
-                  onDrop={() => handleDrop(index)}
-                  className={`flex items-center justify-between p-3 rounded-2xl border transition-all cursor-move ${
-                    b.visible
-                      ? 'bg-[var(--panel)] border-[var(--line)] shadow-xs'
-                      : 'bg-[var(--panel)]/40 border-[var(--line)] opacity-50'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <GripVertical size={14} className="text-[var(--text-dim)] flex-shrink-0" />
-                    <span className="text-xs font-semibold text-[var(--text)] truncate">
-                      {BLOCK_LABELS[b.id] || b.id}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => moveBlockUp(index)}
-                      disabled={index === 0}
-                      className="p-1 rounded text-[var(--text-dim)] hover:text-[var(--text)] disabled:opacity-30"
-                    >
-                      <ArrowUp size={13} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveBlockDown(index)}
-                      disabled={index === blocks.length - 1}
-                      className="p-1 rounded text-[var(--text-dim)] hover:text-[var(--text)] disabled:opacity-30"
-                    >
-                      <ArrowDown size={13} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => toggleBlockVisibility(b.id)}
-                      title={b.visible ? 'Hide block' : 'Show block'}
-                      className={`p-1 rounded ${
-                        b.visible
-                          ? 'text-[var(--accent)] hover:bg-[var(--accent)]/10'
-                          : 'text-[var(--text-dim)] hover:bg-black/5'
-                      }`}
-                    >
-                      {b.visible ? <Eye size={14} /> : <EyeOff size={14} />}
-                    </button>
-                  </div>
-                </div>
-              ))}
+            <div className="flex flex-wrap gap-2">
+              {ALL_BLOCKS.map((blockId) => {
+                const visible = isBlockVisible(blockId);
+                return (
+                  <button
+                    key={blockId}
+                    type="button"
+                    onClick={() => toggleBlockVisibility(blockId)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                      visible
+                        ? 'bg-[var(--panel)] border border-[var(--accent)] text-[var(--accent)] font-semibold shadow-xs'
+                        : 'bg-[var(--panel)]/40 border border-[var(--line)] text-[var(--text-dim)] line-through opacity-60'
+                    }`}
+                  >
+                    {visible ? <Eye size={13} /> : <EyeOff size={13} />}
+                    <span>{BLOCK_LABELS[blockId] || blockId}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
 
-        {/* ================= 2-COLUMN DASHBOARD LAYOUT ================= */}
-        <div className="flex flex-col xl:flex-row gap-6 items-start">
-          {/* Middle Column */}
-          <div className="flex-1 w-full space-y-6 min-w-0">
-            {isVisible('banner') && renderBanner()}
-
-            {/* Row 2: Tasks + Companion Mini */}
-            {(isVisible('tasks') || isVisible('companion_mini')) && (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                {isVisible('tasks') && (
-                  <div className={isVisible('companion_mini') ? 'lg:col-span-7' : 'lg:col-span-12'}>
-                    {renderTasks()}
+        {/* ================= REACT-GRID-LAYOUT DASHBOARD ================= */}
+        <div ref={containerRef as any} className="w-full min-h-[400px]">
+          {!mounted ? (
+            <div className="w-full py-16 flex items-center justify-center text-xs text-[var(--text-dim)]">
+              <span className="animate-spin inline-block mr-2">✦</span>
+              <span>{language === 'vi' ? 'Đang tải bố cục...' : 'Loading layout...'}</span>
+            </div>
+          ) : (
+            <ResponsiveGridLayout
+              className="layout"
+              width={width}
+              layouts={{
+                lg: visibleItems,
+                md: visibleItems,
+                sm: visibleItems.map((i) => ({
+                  ...i,
+                  w: Math.min(i.w, 6),
+                  x: i.x >= 6 ? 0 : i.x,
+                })),
+                xs: visibleItems.map((i) => ({ ...i, w: 4, x: 0 })),
+                xxs: visibleItems.map((i) => ({ ...i, w: 2, x: 0 })),
+              }}
+              breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+              cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
+              rowHeight={85}
+              margin={[16, 16]}
+              dragConfig={{
+                enabled: isEditMode,
+                handle: '.drag-handle',
+              }}
+              resizeConfig={{
+                enabled: isEditMode,
+              }}
+              onLayoutChange={(currentLayout) => {
+                if (isEditMode) {
+                  handleLayoutChange(currentLayout);
+                }
+              }}
+            >
+              {visibleItems.map((item) => (
+                <div key={item.i} className="h-full">
+                  <div
+                    className={`h-full relative flex flex-col transition-shadow ${
+                      isEditMode
+                        ? 'ring-2 ring-dashed ring-[var(--accent)]/50 rounded-3xl p-1 bg-[var(--panel-2)]/20 shadow-md'
+                        : ''
+                    }`}
+                  >
+                    {isEditMode && (
+                      <div className="absolute top-2 right-2 z-20 flex items-center gap-1.5 bg-[var(--panel)]/95 backdrop-blur-xs border border-[var(--line)] rounded-full px-2.5 py-1 shadow-sm">
+                        <span className="text-[11px] font-bold text-[var(--text)] uppercase tracking-wider drag-handle cursor-grab active:cursor-grabbing flex items-center gap-1 select-none">
+                          <GripVertical size={13} className="text-[var(--accent)]" />
+                          {BLOCK_LABELS[item.i] || item.i}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => toggleBlockVisibility(item.i)}
+                          title={language === 'vi' ? 'Ẩn khối này' : 'Hide this block'}
+                          className="text-[var(--text-dim)] hover:text-red-500 p-0.5 ml-1 transition-colors"
+                        >
+                          <EyeOff size={13} />
+                        </button>
+                      </div>
+                    )}
+                    <div className="h-full w-full overflow-hidden rounded-3xl">
+                      {RENDER_MAP[item.i] ? RENDER_MAP[item.i]() : null}
+                    </div>
                   </div>
-                )}
-                {isVisible('companion_mini') && (
-                  <div className={isVisible('tasks') ? 'lg:col-span-5' : 'lg:col-span-12'}>
-                    {renderCompanionMini()}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Row 3: Calendar Grid */}
-            {isVisible('calendar') && renderCalendar()}
-
-            {/* Row 4: Focus Session + Weekly Stats */}
-            {(isVisible('timer') || isVisible('stats')) && (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                {isVisible('timer') && (
-                  <div className={isVisible('stats') ? 'lg:col-span-7' : 'lg:col-span-12'}>
-                    {renderTimer()}
-                  </div>
-                )}
-                {isVisible('stats') && (
-                  <div className={isVisible('timer') ? 'lg:col-span-5' : 'lg:col-span-12'}>
-                    {renderStats()}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Right Column */}
-          <div className="w-full xl:w-[340px] space-y-6 flex-shrink-0">
-            <PixelAssistant
-              language={language}
-              profile={profile}
-              tasks={tasks}
-              habits={habits}
-              chatHistory={chatHistory}
-              onSendMessage={onSendMessage}
-              variant="compact"
-              onOpenSettings={() => onNavigateTab('settings')}
-            />
-
-            {isVisible('music') && renderMusic()}
-            {isVisible('quote') && renderQuote()}
-          </div>
+                </div>
+              ))}
+            </ResponsiveGridLayout>
+          )}
         </div>
       </div>
 

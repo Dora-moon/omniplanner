@@ -192,6 +192,13 @@ export default function PixelAssistant({
               <span>{t('thinking')}…</span>
             </div>
           )}
+
+          {!loading && status && (
+            <div className="self-start bg-red-500/10 border border-red-500/20 text-red-500 px-3 py-1.5 rounded-2xl text-[11px] flex items-center gap-1.5 shadow-xs max-w-[90%]">
+              <span className="flex-shrink-0">⚠️</span>
+              <span className="break-words">{status}</span>
+            </div>
+          )}
         </div>
 
         {/* Quick Suggestion Chips */}

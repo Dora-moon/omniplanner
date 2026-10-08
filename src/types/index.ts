@@ -15,7 +15,15 @@ export type AppMode = 'view' | 'edit';
 
 export type CalendarViewMode = 'week' | 'month';
 
-export type TabId = 'today' | 'planner' | 'companion' | 'focus' | 'sounds' | 'settings';
+export type TabId =
+  | 'today'
+  | 'planner'
+  | 'companion'
+  | 'focus'
+  | 'sounds'
+  | 'settings'
+  | 'profile'
+  | 'social';
 
 export type MascotMood = 'sad' | 'normal' | 'happy';
 
@@ -35,6 +43,15 @@ export interface DashboardBlockConfig {
   order: number;
 }
 
+/** react-grid-layout item: position + size, persisted per user (Requirement 4). */
+export interface DashboardLayoutItem {
+  i: DashboardBlockId;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export const DEFAULT_DASHBOARD_BLOCKS: DashboardBlockConfig[] = [
   { id: 'banner', visible: true, order: 0 },
   { id: 'tasks', visible: true, order: 1 },
@@ -44,6 +61,18 @@ export const DEFAULT_DASHBOARD_BLOCKS: DashboardBlockConfig[] = [
   { id: 'stats', visible: true, order: 5 },
   { id: 'music', visible: true, order: 6 },
   { id: 'quote', visible: true, order: 7 },
+];
+
+/** Default react-grid-layout configuration for the 12-column dashboard grid. */
+export const DEFAULT_DASHBOARD_GRID: DashboardLayoutItem[] = [
+  { i: 'banner', x: 0, y: 0, w: 12, h: 2 },
+  { i: 'tasks', x: 0, y: 2, w: 7, h: 4 },
+  { i: 'companion_mini', x: 7, y: 2, w: 5, h: 4 },
+  { i: 'calendar', x: 0, y: 6, w: 12, h: 3 },
+  { i: 'timer', x: 0, y: 9, w: 7, h: 4 },
+  { i: 'stats', x: 7, y: 9, w: 5, h: 4 },
+  { i: 'music', x: 0, y: 13, w: 5, h: 5 },
+  { i: 'quote', x: 5, y: 13, w: 7, h: 5 },
 ];
 
 /** Firestore doc: users/{uid}/memories/{memoryId} */
@@ -73,8 +102,45 @@ export interface UserProfile {
   language: Language;
   mode: AppMode;
   onboarded: boolean;
+  // AI Companion Settings (Requirement 5)
+  aiApiSource?: 'system' | 'personal';
+  aiPersonalApiKey?: string | null;
+  // Expanded personal profile (Requirement 6)
+  profileData?: ProfileData;
   createdAt: number; // epoch ms
   updatedAt: number; // epoch ms
+}
+
+/** Personal profile data stored on the user doc (Requirement 6). */
+export interface ProfileData {
+  displayName: string;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  bio?: string;
+  habits: string[];
+  goals: string[];
+  interests: string[];
+  journalEntries: JournalEntry[];
+  updatedAt: number;
+}
+
+export interface JournalEntry {
+  id: string;
+  text: string;
+  createdAt: number;
+}
+
+/** Firestore doc: users/{uid}/posts/{postId} (Requirement 7). */
+export interface Post {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorAvatar?: string | null;
+  content: string;
+  imageUrl?: string | null;
+  createdAt: number;
+  updatedAt: number;
+  visibility: 'private' | 'friends' | 'public';
 }
 
 export interface ThemeConfig {

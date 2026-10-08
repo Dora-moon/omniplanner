@@ -4,17 +4,7 @@
 // Right: Clean sign in / sign up form with Google/Apple OAuth, email validation, and responsive mobile layout.
 
 import React, { useState } from 'react';
-import {
-  GoogleAuthProvider,
-  OAuthProvider,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-  updateProfile,
-  type AuthError,
-} from 'firebase/auth';
-import { auth } from '@/config/firebase';
-import { getUserProfile } from '@/models/user.model';
+import { useAuth, mapAuthError } from '@/controllers/useAuth';
 import { useTranslation } from '@/i18n/translations';
 import { Button, Input } from '@/ui';
 import type { Language } from '@/types';
@@ -25,29 +15,10 @@ interface AuthModalProps {
   onLanguageChange: (lang: Language) => void;
 }
 
-function mapAuthError(error: AuthError, t: (k: any) => string): string {
-  switch (error.code) {
-    case 'auth/invalid-email':
-      return t('authErrorInvalidEmail');
-    case 'auth/weak-password':
-      return t('authErrorWeakPassword');
-    case 'auth/wrong-password':
-    case 'auth/invalid-credential':
-    case 'auth/user-not-found':
-      return t('authErrorWrongPassword');
-    case 'auth/email-already-in-use':
-      return t('authErrorEmailInUse');
-    case 'auth/operation-not-allowed':
-      return t('authErrorOperationNotAllowed');
-    case 'auth/network-request-failed':
-      return t('authErrorNetworkFailed');
-    default:
-      return t('authErrorGeneric');
-  }
-}
-
 export default function AuthModal({ language, onLanguageChange }: AuthModalProps) {
   const { t } = useTranslation(language);
+  const { signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithApple } = useAuth();
+
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -68,16 +39,12 @@ export default function AuthModal({ language, onLanguageChange }: AuthModalProps
     setLoading(true);
     try {
       if (mode === 'register') {
-        const cred = await createUserWithEmailAndPassword(auth, email, password);
-        if (displayName.trim()) {
-          await updateProfile(cred.user, { displayName: displayName.trim() });
-        }
+        await signUpWithEmail(email, password, displayName);
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        await signInWithEmail(email, password);
       }
-    } catch (err) {
-      const authErr = err as AuthError;
-      setError(mapAuthError(authErr, t));
+    } catch (err: any) {
+      setError(mapAuthError(err, t));
     } finally {
       setLoading(false);
     }
@@ -87,17 +54,15 @@ export default function AuthModal({ language, onLanguageChange }: AuthModalProps
     setError(null);
     setLoading(true);
     try {
-      const result = await signInWithPopup(auth, new GoogleAuthProvider());
-      await getUserProfile(result.user.uid);
-    } catch (err) {
-      const authErr = err as AuthError;
+      await signInWithGoogle();
+    } catch (err: any) {
       if (
-        authErr.code === 'auth/popup-closed-by-user' ||
-        authErr.code === 'auth/cancelled-popup-request'
+        err?.code === 'auth/popup-closed-by-user' ||
+        err?.code === 'auth/cancelled-popup-request'
       ) {
         return;
       }
-      setError(mapAuthError(authErr, t));
+      setError(mapAuthError(err, t));
     } finally {
       setLoading(false);
     }
@@ -107,17 +72,15 @@ export default function AuthModal({ language, onLanguageChange }: AuthModalProps
     setError(null);
     setLoading(true);
     try {
-      const provider = new OAuthProvider('apple.com');
-      await signInWithPopup(auth, provider);
-    } catch (err) {
-      const authErr = err as AuthError;
+      await signInWithApple();
+    } catch (err: any) {
       if (
-        authErr.code === 'auth/popup-closed-by-user' ||
-        authErr.code === 'auth/cancelled-popup-request'
+        err?.code === 'auth/popup-closed-by-user' ||
+        err?.code === 'auth/cancelled-popup-request'
       ) {
         return;
       }
-      setError(mapAuthError(authErr, t));
+      setError(mapAuthError(err, t));
     } finally {
       setLoading(false);
     }
@@ -139,9 +102,9 @@ export default function AuthModal({ language, onLanguageChange }: AuthModalProps
 
           {/* Top Brand Logo */}
           <div className="relative z-10 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-white p-1.5 shadow-sm border border-[#D5DDD2] flex items-center justify-center">
+            <div className="w-10 h-10 rounded-2xl bg-white shadow-sm border border-[#D5DDD2] flex items-center justify-center overflow-hidden flex-shrink-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.png" alt="Omni Logo" className="w-full h-full object-contain" />
+              <img src="/logo.png" alt="Omni Logo" className="w-full h-full object-cover" />
             </div>
             <div>
               <span className="font-bold text-lg tracking-tight font-sans text-[#16271D]">
@@ -155,12 +118,12 @@ export default function AuthModal({ language, onLanguageChange }: AuthModalProps
 
           {/* Center Cozy Scene Graphic */}
           <div className="relative z-10 my-6 sm:my-8 flex flex-col items-center text-center">
-            <div className="w-32 h-32 rounded-3xl bg-white/80 backdrop-blur-sm border border-white/60 p-4 shadow-lg flex items-center justify-center relative mb-4">
+            <div className="w-32 h-32 rounded-3xl bg-white/80 backdrop-blur-sm border border-white/60 shadow-lg flex items-center justify-center relative mb-4 overflow-hidden">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/logo.png"
                 alt="Omni Mascot"
-                className="w-full h-full object-contain drop-shadow-md hover:scale-105 transition-transform"
+                className="w-full h-full object-cover drop-shadow-md hover:scale-105 transition-transform"
               />
               <span className="absolute -top-2 -right-2 p-1.5 rounded-full bg-amber-100 text-amber-600 shadow-xs border border-amber-200">
                 <Sparkles size={14} />

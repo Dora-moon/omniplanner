@@ -10,7 +10,9 @@ import {
   createUserWithEmailAndPassword,
   updateProfile,
   GoogleAuthProvider,
+  OAuthProvider,
   type User,
+  type AuthError,
 } from 'firebase/auth';
 import { auth } from '@/config/firebase';
 import {
@@ -25,19 +27,24 @@ import { applyThemeToDocument } from '@/ui/tokens';
 
 export function useAuth() {
   const [authUser, setAuthUser] = useState<User | null | undefined>(undefined); // undefined = loading
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null | undefined>(undefined); // undefined = loading
   const [language, setLanguage] = useState<Language>('en');
 
   // Listen to Firebase Auth state
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => setAuthUser(user));
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setAuthUser(user);
+      if (user === null) {
+        setProfile(null);
+      }
+    });
     return () => unsub();
   }, []);
 
   // Listen to User Profile changes in Firestore
   useEffect(() => {
     if (!authUser) {
-      setProfile(null);
+      if (authUser === null) setProfile(null);
       return;
     }
     const unsubProfile = subscribeUserProfile(authUser.uid, (p) => {
@@ -60,26 +67,27 @@ export function useAuth() {
     }) => {
       if (!authUser) return;
       const now = Date.now();
+      const existing = (profile || {}) as Partial<UserProfile>;
       const newProfile: UserProfile = {
         uid: authUser.uid,
-        displayName: authUser.displayName || authUser.email?.split('@')[0] || 'User',
-        email: authUser.email || '',
+        displayName: existing.displayName || authUser.displayName || authUser.email?.split('@')[0] || 'User',
+        email: authUser.email || existing.email || '',
         heightCm: data.heightCm,
         weightKg: data.weightKg,
         age: data.age,
         gender: data.gender,
         goal: data.goal,
-        mascotUrl: null,
-        themeConfig: DEFAULT_THEME,
+        mascotUrl: existing.mascotUrl || null,
+        themeConfig: existing.themeConfig || DEFAULT_THEME,
         language,
-        mode: 'view',
+        mode: existing.mode || 'view',
         onboarded: true,
-        createdAt: now,
+        createdAt: existing.createdAt || now,
         updatedAt: now,
       };
       await createUserProfile(newProfile);
     },
-    [authUser, language]
+    [authUser, profile, language]
   );
 
   async function handleLanguageChange(lang: Language) {
@@ -98,6 +106,35 @@ export function useAuth() {
     await signOut(auth);
   }
 
+  async function signInWithEmail(email: string, pass: string): Promise<User> {
+    const cred = await signInWithEmailAndPassword(auth, email, pass);
+    return cred.user;
+  }
+
+  async function signUpWithEmail(
+    email: string,
+    pass: string,
+    displayName?: string
+  ): Promise<User> {
+    const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    if (displayName?.trim()) {
+      await updateProfile(cred.user, { displayName: displayName.trim() });
+    }
+    return cred.user;
+  }
+
+  async function signInWithGoogle(): Promise<User> {
+    const cred = await signInWithPopup(auth, new GoogleAuthProvider());
+    await getUserProfile(cred.user.uid);
+    return cred.user;
+  }
+
+  async function signInWithApple(): Promise<User> {
+    const provider = new OAuthProvider('apple.com');
+    const cred = await signInWithPopup(auth, provider);
+    return cred.user;
+  }
+
   return {
     authUser,
     profile,
@@ -106,5 +143,31 @@ export function useAuth() {
     onModeChange: handleModeChange,
     onLogout: handleLogout,
     onOnboardingComplete: handleOnboardingComplete,
+    signInWithEmail,
+    signUpWithEmail,
+    signInWithGoogle,
+    signInWithApple,
   };
+}
+
+export function mapAuthError(error: AuthError | any, t: (k: any) => string): string {
+  const code = error?.code;
+  switch (code) {
+    case 'auth/invalid-email':
+      return t('authErrorInvalidEmail');
+    case 'auth/weak-password':
+      return t('authErrorWeakPassword');
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential':
+    case 'auth/user-not-found':
+      return t('authErrorWrongPassword');
+    case 'auth/email-already-in-use':
+      return t('authErrorEmailInUse');
+    case 'auth/operation-not-allowed':
+      return t('authErrorOperationNotAllowed');
+    case 'auth/network-request-failed':
+      return t('authErrorNetworkFailed');
+    default:
+      return t('authErrorGeneric');
+  }
 }

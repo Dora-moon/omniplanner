@@ -6,13 +6,14 @@ import { ChevronLeft, ChevronRight, Mic, Square, Sparkles } from 'lucide-react';
 import { useTranslation } from '@/i18n/translations';
 import { useCalendar } from '@/controllers/useCalendar';
 import { Badge, Button } from '@/ui';
-import type { Language, Task, TaskCategory } from '@/types';
+import type { Language, Task, TaskCategory, UserProfile } from '@/types';
 
 interface CalendarViewProps {
   uid: string;
   language: Language;
   tasks: Task[];
   variant?: 'full' | 'compact';
+  profile?: UserProfile | null;
 }
 
 const CATEGORY_KEYS: Record<
@@ -36,6 +37,7 @@ export default function CalendarView({
   language,
   tasks,
   variant = 'full',
+  profile,
 }: CalendarViewProps) {
   const { t } = useTranslation(language);
   const {
@@ -57,7 +59,7 @@ export default function CalendarView({
     listening,
     toggleVoiceInput,
     handleParseSchedule,
-  } = useCalendar({ uid, language, tasks });
+  } = useCalendar({ uid, language, tasks, profile });
 
   const dayLabelKeys: Array<
     'dayMon' | 'dayTue' | 'dayWed' | 'dayThu' | 'dayFri' | 'daySat' | 'daySun'

@@ -10,3 +10,4 @@ export * from './Modal';
 export * from './Badge';
 export * from './FileUpload';
 export * from './ColorPicker';
+export * from './Toast';

@@ -58,9 +58,9 @@ export default function OnboardingModal({ language, onComplete }: OnboardingModa
       <div className="w-full max-w-lg bg-[var(--panel)] border border-[var(--line)] rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
         {/* Header */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-[var(--panel-2)] p-1.5 flex items-center justify-center border border-[var(--line)] shadow-xs">
+          <div className="w-10 h-10 rounded-2xl bg-[var(--panel-2)] flex items-center justify-center border border-[var(--line)] shadow-xs overflow-hidden flex-shrink-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="Omni Logo" className="w-full h-full object-contain" />
+            <img src="/logo.png" alt="Omni Logo" className="w-full h-full object-cover" />
           </div>
           <div>
             <h1 className="text-xl font-bold font-sans text-[var(--text)] tracking-tight">

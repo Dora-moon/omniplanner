@@ -94,7 +94,7 @@ export function useCompanion({
     setStatus(language === 'vi' ? 'Đang suy nghĩ...' : 'Thinking...');
 
     try {
-      // 1. Chat with mascot injecting stored memories
+      // 1. Chat with mascot injecting stored memories and profile data
       const reply = await chatWithMascot(
         text,
         {
@@ -104,23 +104,26 @@ export function useCompanion({
           metrics,
           habitStreak: bestStreak,
           memories,
+          profileData: profile.profileData,
         },
-        language
+        language,
+        profile
       );
       onSendMessage(text, reply);
       setStatus('');
 
       // 2. Asynchronously extract and store any lasting memory about user
-      extractKeyMemories(text, language)
+      extractKeyMemories(text, language, profile)
         .then((newMemories) => {
           newMemories.forEach((mem) => {
             addUserMemory(uid, mem, 'preference');
           });
         })
         .catch(() => {});
-    } catch (err) {
-      setStatus(language === 'vi' ? 'Pixel chưa trả lời được lúc này.' : 'AI is temporarily unavailable.');
-      console.error(err);
+    } catch (err: any) {
+      const message = err?.message || (language === 'vi' ? 'Pixel chưa trả lời được lúc này.' : 'AI is temporarily unavailable.');
+      setStatus(message);
+      console.error('useCompanion chat error:', err);
     } finally {
       setLoading(false);
     }

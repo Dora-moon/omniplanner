@@ -4,7 +4,7 @@
 import { useState, useMemo, useRef } from 'react';
 import { parseScheduleWithAI } from '@/services/aiService';
 import { addParsedTasks, addTask, deleteTask, toggleTaskCompleted } from '@/models/task.model';
-import type { CalendarViewMode, Language, Task } from '@/types';
+import type { CalendarViewMode, Language, Task, UserProfile } from '@/types';
 
 function toISODate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -45,10 +45,12 @@ export function useCalendar({
   uid,
   language,
   tasks,
+  profile,
 }: {
   uid: string;
   language: Language;
   tasks: Task[];
+  profile?: UserProfile | null;
 }) {
   const [viewMode, setViewMode] = useState<CalendarViewMode>('week');
   const [reference, setReference] = useState(() => new Date());
@@ -129,14 +131,16 @@ export function useCalendar({
       const drafts = await parseScheduleWithAI(
         scheduleText.trim(),
         language,
-        toISODate(new Date())
+        toISODate(new Date()),
+        profile
       );
       await addParsedTasks(uid, drafts, 'ai_parsed');
       setScheduleText('');
       setAiStatus('');
-    } catch (err) {
-      setAiStatus('Could not parse schedule right now.');
-      console.error(err);
+    } catch (err: any) {
+      const message = err?.message || (language === 'vi' ? 'Không thể phân tích lịch trình lúc này.' : 'Could not parse schedule right now.');
+      setAiStatus(message);
+      console.error('useCalendar parse schedule error:', err);
     } finally {
       setAiLoading(false);
     }

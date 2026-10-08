@@ -6,3 +6,6 @@ export * from './habit.model';
 export * from './user.model';
 export * from './memory.model';
 export * from './layout.model';
+export * from './profile.model';
+export * from './posts.model';
+export * from './helpers';
